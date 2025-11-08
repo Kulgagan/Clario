@@ -6,7 +6,7 @@ from brainflow.data_filter import DataFilter, FilterTypes, AggOperations
 
 # ======== CONFIGURATION ========
 INTERVAL_SECONDS = 15
-OUTPUT_FILE = "data/muse_metrics_relax.xlsx"   # or "muse_metrics.csv"
+OUTPUT_FILE = "data/muse_metrics_mo_relax.xlsx"   # or "muse_metrics.csv"
 BOARD_ID = BoardIds.MUSE_2_BOARD.value
 # ===============================
 
