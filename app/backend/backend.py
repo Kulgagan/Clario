@@ -10,31 +10,30 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds, BrainFlowError 
+from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds, BrainFlowError
 from brainflow.data_filter import DataFilter, FilterTypes, AggOperations
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# BRAINFLOW CONFIGURATION
+# CONFIGURATION
 # ============================================================================
 BOARD_ID = BoardIds.MUSE_2_BOARD.value
 UPDATE_INTERVAL = 2.0  # Update every 2 seconds
 WINDOW_SECONDS = 3.0   # Use 3 seconds of data
 
 # ============================================================================
-# BRAINFLOW FUNCTIONS
+# BRAINFLOW FUNCTIONS (only called when connect button is pressed)
 # ============================================================================
 def calculate_alpha_beta_ratio(data, eeg_channels, sampling_rate):
-    """Calculate alpha/beta ratio from EEG data - matches muse.py filtering."""
+    """Calculate alpha/beta ratio from EEG data."""
     try:
         if data.shape[1] == 0:
             return None
         
         bands = {}
         for ch in eeg_channels:
-            # Match muse.py: filter directly on data[ch] (in-place)
             DataFilter.detrend(data[ch], AggOperations.MEAN.value)
             DataFilter.perform_bandpass(data[ch], sampling_rate, 1.0, 50.0, 4, FilterTypes.BUTTERWORTH.value, 0)
             psd = DataFilter.get_psd_welch(data[ch], nfft=256, overlap=128, sampling_rate=sampling_rate, window=0)
@@ -43,10 +42,7 @@ def calculate_alpha_beta_ratio(data, eeg_channels, sampling_rate):
                 "beta": DataFilter.get_band_power(psd, 13.0, 30.0),
             }
         
-        # Match muse.py: TP9, AF7, AF8, TP10 = eeg_channels[0, 1, 2, 3]
         TP9, AF7, AF8, TP10 = eeg_channels[0], eeg_channels[1], eeg_channels[2], eeg_channels[3]
-        
-        # Match muse.py: same calculation with 1e-6 safety
         total_alpha = bands[AF7]["alpha"] + bands[AF8]["alpha"]
         total_beta = bands[AF7]["beta"] + bands[AF8]["beta"]
         
@@ -59,40 +55,12 @@ def calculate_alpha_beta_ratio(data, eeg_channels, sampling_rate):
         return None
 
 def ratio_to_focus_percentage(ratio):
-    """Convert alpha/beta ratio to focus percentage (0-100%). Lower ratio = higher focus."""
+    """Convert alpha/beta ratio to focus percentage (0-100%)."""
     if ratio is None:
         return 0.0
-    
-    # Map ratio [0.2, 3.0] to [100%, 0%] (inverted)
     ratio = max(0.2, min(3.0, ratio))
     normalized = 1.0 - ((ratio - 0.2) / 2.8)
     return max(0.0, min(100.0, normalized * 100.0))
-
-def connect_muse2(mac_address=None, serial_port=None):
-    """Connect to Muse 2 device."""
-    params = BrainFlowInputParams()
-    if mac_address:
-        params.mac_address = mac_address
-    elif serial_port:
-        params.serial_port = serial_port
-    params.timeout = 15
-    
-    board = BoardShim(BOARD_ID, params)
-    board.prepare_session()
-    board.start_stream()
-    
-    eeg_channels = BoardShim.get_eeg_channels(BOARD_ID)
-    sampling_rate = BoardShim.get_sampling_rate(BOARD_ID)
-    
-    return board, eeg_channels, sampling_rate
-
-def disconnect_muse2(board):
-    """Disconnect from Muse 2 device."""
-    try:
-        board.stop_stream()
-        board.release_session()
-    except:
-        pass
 
 # ============================================================================
 # DEVICE STATE
@@ -113,7 +81,8 @@ class DeviceState:
 device_state = DeviceState()
 
 def streaming_worker():
-    """Background thread that reads EEG data and calculates focus."""
+    """Background thread - only runs after connect button is pressed."""
+    logger.info("Streaming worker started")
     while device_state.is_streaming and device_state.is_connected:
         try:
             if device_state.board is None:
@@ -146,6 +115,7 @@ def streaming_worker():
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             time.sleep(1.0)
+    logger.info("Streaming worker stopped")
 
 # ============================================================================
 # FASTAPI APP
@@ -224,14 +194,26 @@ async def get_status():
 
 @app.post("/connect")
 async def connect_device(request: ConnectRequest):
+    """Connect to Muse 2 - BrainFlow only runs here when button is clicked."""
     if device_state.is_connected:
         return {"message": "Already connected", "status": "connected"}
     
     try:
-        board, eeg_channels, sampling_rate = connect_muse2(
-            request.mac_address, 
-            request.serial_port
-        )
+        # Only initialize BrainFlow when connect button is pressed
+        logger.info("Connecting to Muse 2...")
+        params = BrainFlowInputParams()
+        if request.mac_address:
+            params.mac_address = request.mac_address
+        elif request.serial_port:
+            params.serial_port = request.serial_port
+        params.timeout = 15
+        
+        board = BoardShim(BOARD_ID, params)
+        board.prepare_session()
+        board.start_stream()
+        
+        eeg_channels = BoardShim.get_eeg_channels(BOARD_ID)
+        sampling_rate = BoardShim.get_sampling_rate(BOARD_ID)
         
         device_state.board = board
         device_state.is_connected = True
@@ -239,19 +221,23 @@ async def connect_device(request: ConnectRequest):
         device_state.sampling_rate = sampling_rate
         device_state.is_streaming = True
         
+        # Start streaming worker (runs BrainFlow processing)
         device_state.streaming_thread = threading.Thread(target=streaming_worker, daemon=True)
         device_state.streaming_thread.start()
         
-        logger.info("Muse 2 connected!")
+        logger.info("Muse 2 connected and streaming started!")
         return {"message": "Connected", "status": "connected", "device": "Muse 2"}
     
     except BrainFlowError as e:
+        logger.error(f"BrainFlow error: {e}")
         raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
     except Exception as e:
+        logger.error(f"Connection error: {e}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/disconnect")
 async def disconnect_device():
+    """Disconnect from Muse 2."""
     if not device_state.is_connected:
         return {"message": "Not connected", "status": "disconnected"}
     
@@ -261,7 +247,11 @@ async def disconnect_device():
         device_state.streaming_thread.join(timeout=2.0)
     
     if device_state.board:
-        disconnect_muse2(device_state.board)
+        try:
+            device_state.board.stop_stream()
+            device_state.board.release_session()
+        except:
+            pass
     
     device_state.board = None
     device_state.is_connected = False
@@ -281,6 +271,7 @@ async def get_focus():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket for live focus updates."""
     await websocket.accept()
     device_state.websocket_clients.append(websocket)
     
@@ -309,8 +300,12 @@ async def shutdown():
     if device_state.is_connected:
         device_state.is_streaming = False
         if device_state.board:
-            disconnect_muse2(device_state.board)
+            try:
+                device_state.board.stop_stream()
+                device_state.board.release_session()
+            except:
+                pass
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
