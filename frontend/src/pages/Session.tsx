@@ -1,30 +1,85 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Pause, Play, SkipForward, Volume2 } from "lucide-react";
 import Visualizer from "@/components/Visualizer";
 import { Slider } from "@/components/ui/slider";
+import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 const Session = () => {
   const [playing, setPlaying] = useState(true);
   const [volume, setVolume] = useState([70]);
   const [focusLevel, setFocusLevel] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
+  const [alphaBetaRatio, setAlphaBetaRatio] = useState(0);
+  const wsRef = useRef<WebSocket | null>(null);
   const navigate = useNavigate();
 
-  // Simulate focus level changes
+  // Connect to WebSocket and handle live updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      setFocusLevel((prev) => {
-        const change = (Math.random() - 0.5) * 20;
-        return Math.max(0, Math.min(100, prev + change));
+    const connectWebSocket = () => {
+      try {
+        const ws = new WebSocket(api.getWebSocketUrl());
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log("WebSocket connected");
+          setIsConnected(true);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.focus_percentage !== undefined) {
+              setFocusLevel(data.focus_percentage);
+              setAlphaBetaRatio(data.alpha_beta_ratio || 0);
+            }
+          } catch (error) {
+            console.error("Error parsing WebSocket message:", error);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          toast.error("Connection error. Trying to reconnect...");
+        };
+
+        ws.onclose = () => {
+          console.log("WebSocket closed");
+          setIsConnected(false);
+          // Try to reconnect after 3 seconds
+          setTimeout(connectWebSocket, 3000);
+        };
+      } catch (error) {
+        console.error("Failed to connect WebSocket:", error);
+        toast.error("Failed to connect to live feed");
+      }
+    };
+
+    // Check if device is connected first
+    api.getStatus()
+      .then((status) => {
+        if (status.is_connected) {
+          connectWebSocket();
+          setFocusLevel(status.focus_percentage);
+          setAlphaBetaRatio(status.alpha_beta_ratio);
+        } else {
+          toast.error("Device not connected. Redirecting to connect page...");
+          setTimeout(() => navigate("/connect"), 2000);
+        }
+      })
+      .catch(() => {
+        toast.error("Failed to check device status");
+        setTimeout(() => navigate("/connect"), 2000);
       });
-    }, 2000);
 
-    // Initialize with random focus
-    setFocusLevel(Math.random() * 60 + 20);
-
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [navigate]);
 
   const getFocusColor = () => {
     if (focusLevel < 40) return "text-destructive";
@@ -36,6 +91,17 @@ const Session = () => {
     if (focusLevel < 40) return "Distracted";
     if (focusLevel < 70) return "Focused";
     return "Deep Focus";
+  };
+
+  const handleEndSession = async () => {
+    try {
+      await api.disconnect();
+      toast.success("Session ended");
+      navigate("/");
+    } catch (error) {
+      toast.error("Failed to disconnect");
+      navigate("/");
+    }
   };
 
   return (
@@ -61,13 +127,19 @@ const Session = () => {
 
       {/* Header */}
       <header className="relative z-10 p-6 flex justify-between items-center">
-        <Button 
-          variant="ghost" 
-          onClick={() => navigate("/")}
-          className="hover:bg-card/50"
-        >
-          End Session
-        </Button>
+        <div className="flex items-center gap-4">
+          <Button 
+            variant="ghost" 
+            onClick={handleEndSession}
+            className="hover:bg-card/50"
+          >
+            End Session
+          </Button>
+          <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
+          <span className="text-sm text-muted-foreground">
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </span>
+        </div>
         
         <div className="flex items-center gap-3">
           <Volume2 className="w-5 h-5 text-muted-foreground" />

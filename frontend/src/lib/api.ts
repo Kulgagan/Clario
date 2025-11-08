@@ -1,0 +1,81 @@
+// API Configuration
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+// Types
+export interface StatusResponse {
+  status: string;
+  is_connected: boolean;
+  is_streaming: boolean;
+  focus_percentage: number;
+  alpha_beta_ratio: number;
+}
+
+export interface ConnectRequest {
+  mac_address?: string;
+  serial_port?: string;
+}
+
+export interface FocusResponse {
+  focus_percentage: number;
+  alpha_beta_ratio: number;
+  is_connected: boolean;
+  is_streaming: boolean;
+  timestamp: number;
+}
+
+// API Functions
+export const api = {
+  // Get device status
+  async getStatus(): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/status`);
+    if (!response.ok) {
+      throw new Error('Failed to get status');
+    }
+    return response.json();
+  },
+
+  // Connect to device
+  async connect(request?: ConnectRequest): Promise<{ message: string; status: string }> {
+    const response = await fetch(`${API_BASE_URL}/connect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request || {}),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to connect');
+    }
+    return response.json();
+  },
+
+  // Disconnect from device
+  async disconnect(): Promise<{ message: string; status: string }> {
+    const response = await fetch(`${API_BASE_URL}/disconnect`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to disconnect');
+    }
+    return response.json();
+  },
+
+  // Get current focus
+  async getFocus(): Promise<FocusResponse> {
+    const response = await fetch(`${API_BASE_URL}/focus`);
+    if (!response.ok) {
+      throw new Error('Failed to get focus');
+    }
+    return response.json();
+  },
+
+  // WebSocket URL
+  getWebSocketUrl(): string {
+    const wsProtocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
+    const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
+    return `${wsProtocol}://${wsHost}/ws`;
+  },
+};
+

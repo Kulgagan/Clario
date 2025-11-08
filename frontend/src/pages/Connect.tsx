@@ -1,25 +1,51 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Bluetooth, Loader2 } from "lucide-react";
+import { Bluetooth, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 const Connect = () => {
   const [connecting, setConnecting] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const navigate = useNavigate();
 
+  // Check connection status on mount
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const status = await api.getStatus();
+        if (status.is_connected) {
+          setIsConnected(true);
+          toast.info("Device already connected");
+        }
+      } catch (error) {
+        // Ignore errors on initial check
+      }
+    };
+    checkStatus();
+  }, []);
+
   const handleConnect = async () => {
+    if (isConnected) {
+      navigate("/session");
+      return;
+    }
+
     setConnecting(true);
-    
-    // Simulate connection process
     toast.info("Searching for Muse 2 device...");
     
-    setTimeout(() => {
+    try {
+      await api.connect();
       toast.success("Connected to Muse 2!");
+      setIsConnected(true);
       setTimeout(() => {
         navigate("/session");
       }, 1000);
-    }, 2500);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to connect to device");
+      setConnecting(false);
+    }
   };
 
   return (
@@ -34,11 +60,17 @@ const Connect = () => {
         {/* Connection status indicator */}
         <div className="mb-8 flex justify-center">
           <div className={`relative ${connecting ? 'animate-scale-pulse' : ''}`}>
-            <Bluetooth className="w-24 h-24 text-primary" strokeWidth={1.5} />
-            {connecting && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-32 h-32 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-              </div>
+            {isConnected ? (
+              <CheckCircle2 className="w-24 h-24 text-primary" strokeWidth={1.5} />
+            ) : (
+              <>
+                <Bluetooth className="w-24 h-24 text-primary" strokeWidth={1.5} />
+                {connecting && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-32 h-32 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -48,7 +80,9 @@ const Connect = () => {
         </h1>
 
         <p className="text-lg text-muted-foreground mb-10 leading-relaxed">
-          {connecting 
+          {isConnected
+            ? "Device connected! Ready to start your focus session."
+            : connecting 
             ? "Establishing connection with your device..." 
             : "Make sure your Muse 2 headband is powered on and nearby."
           }
@@ -65,6 +99,8 @@ const Connect = () => {
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               Connecting...
             </>
+          ) : isConnected ? (
+            "Start Session"
           ) : (
             "Connect Device"
           )}
