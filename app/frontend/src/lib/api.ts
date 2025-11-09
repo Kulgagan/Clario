@@ -23,6 +23,13 @@ export interface FocusResponse {
   timestamp: number;
 }
 
+export interface CalibrationStatus {
+  phase: 'relax' | 'task' | null;
+  elapsed: number;
+  counts: { relax: number; task: number };
+  midpoint: number | null;
+}
+
 // API Functions
 export const api = {
   // Get device status
@@ -83,5 +90,35 @@ export const api = {
     const wsProtocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
     const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
     return `${wsProtocol}://${wsHost}/ws/music`;
+  },
+
+  // Calibration controls
+  async startCalibration(phase: 'relax' | 'task'): Promise<{ status: string; phase: string }> {
+    const res = await fetch(`${API_BASE_URL}/calibration/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phase }),
+    });
+    if (!res.ok) throw new Error('Failed to start calibration');
+    return res.json();
+  },
+  async stopCalibration(phase: 'relax' | 'task'): Promise<{ status: string; phase: string; stats: any }> {
+    const res = await fetch(`${API_BASE_URL}/calibration/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phase }),
+    });
+    if (!res.ok) throw new Error('Failed to stop calibration');
+    return res.json();
+  },
+  async commitCalibration(): Promise<{ status: string; midpoint: number; relax_mean: number; task_mean: number; counts: {relax:number; task:number} }> {
+    const res = await fetch(`${API_BASE_URL}/calibration/commit`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to commit calibration');
+    return res.json();
+  },
+  async getCalibrationStatus(): Promise<CalibrationStatus> {
+    const res = await fetch(`${API_BASE_URL}/calibration/status`);
+    if (!res.ok) throw new Error('Failed to get calibration status');
+    return res.json();
   },
 }

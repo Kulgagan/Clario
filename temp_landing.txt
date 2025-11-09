@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Brain, Waves } from "lucide-react";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -17,10 +16,7 @@ const Landing = () => {
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center">
         {/* Logo/Icon */}
         <div className="mb-8 animate-float">
-          <div className="relative">
-            <Brain className="w-20 h-20 text-primary" strokeWidth={1.5} />
-            <Waves className="w-12 h-12 text-accent absolute -bottom-2 -right-2 animate-pulse-soft" strokeWidth={1.5} />
-          </div>
+          <img src="/logo.png" alt="App logo" className="w-24 h-24 mx-auto rounded-xl shadow-lg" />
         </div>
 
         {/* Hero content */}
@@ -69,3 +65,4 @@ const Landing = () => {
 };
 
 export default Landing;
+

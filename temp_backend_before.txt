@@ -66,14 +66,8 @@ def ratio_to_focus_percentage(ratio):
     # normalized = 1.0 - ((ratio - 0.2) / 2.8)
     # return max(0.0, min(100.0, normalized * 100.0))
 
-    # Parameters (dynamic midpoint learned via calibration)
-    try:
-        _mp = getattr(device_state, "calibration_midpoint", None)
-        if _mp is None and hasattr(device_state, "calibration"):
-            _mp = device_state.calibration.get("midpoint", 0.7)
-        midpoint = float(_mp) if _mp is not None else 0.7
-    except Exception:
-        midpoint = 0.7
+    # Parameters (you can tune these)
+    midpoint = 0.7      # roughly neutral focus point
     steepness = 3.0     # controls how quickly focus changes near midpoint
 
     focus_score = 1 / (1 + math.exp(steepness * (ratio - midpoint)))
@@ -97,15 +91,6 @@ class DeviceState:
         self.websocket_clients = []
         self.streaming_thread: Optional[threading.Thread] = None
         self.update_queue = queue.Queue()
-        # Calibration state
-        self.calibration = {
-            "phase": None,        # None | "relax" | "task"
-            "start_time": 0.0,
-            "relax": [],         # list of ratios
-            "task": [],          # list of ratios
-            "midpoint": 0.7,
-        }
-        self.calibration_midpoint = None
 
 device_state = DeviceState()
 
@@ -130,16 +115,6 @@ def streaming_worker():
             if ratio is not None:
                 device_state.alpha_beta_ratio = ratio
                 device_state.focus_percentage = ratio_to_focus_percentage(ratio)
-                # If calibration is active, collect samples for the current phase
-                try:
-                    cal = device_state.calibration
-                    phase = cal.get("phase") if isinstance(cal, dict) else None
-                    if phase in ("relax", "task"):
-                        buf = cal.get(phase)
-                        if isinstance(buf, list) and len(buf) < 1024:
-                            buf.append(float(ratio))
-                except Exception:
-                    pass
                 
                 try:
                     device_state.update_queue.put_nowait({
@@ -423,73 +398,3 @@ async def music_ws(ws: WebSocket):
         except Exception:
             pass
 # ========================================================
-
-# ================= CALIBRATION API ======================
-class CalibPhase(BaseModel):
-    phase: str
-    duration_sec: Optional[int] = None
-
-@app.post("/calibration/start")
-async def calibration_start(req: CalibPhase):
-    phase = (req.phase or "").lower()
-    if phase not in ("relax", "task"):
-        raise HTTPException(status_code=400, detail="phase must be 'relax' or 'task'")
-    cal = device_state.calibration
-    cal["phase"] = phase
-    cal["start_time"] = time.time()
-    cal[phase] = []
-    return {"status": "ok", "phase": phase}
-
-@app.post("/calibration/stop")
-async def calibration_stop(req: CalibPhase):
-    phase = (req.phase or "").lower()
-    if phase not in ("relax", "task"):
-        raise HTTPException(status_code=400, detail="phase must be 'relax' or 'task'")
-    cal = device_state.calibration
-    if cal.get("phase") == phase:
-        cal["phase"] = None
-    samples = cal.get(phase, []) or []
-    import statistics
-    stats = {
-        "count": len(samples),
-        "mean": float(statistics.fmean(samples)) if samples else None,
-        "median": float(statistics.median(samples)) if samples else None,
-    }
-    return {"status": "ok", "phase": phase, "stats": stats}
-
-@app.post("/calibration/commit")
-async def calibration_commit():
-    cal = device_state.calibration
-    relax = cal.get("relax", []) or []
-    task = cal.get("task", []) or []
-    if not relax or not task:
-        raise HTTPException(status_code=400, detail="Both relax and task samples are required")
-    import statistics
-    relax_mean = statistics.fmean(relax)
-    task_mean = statistics.fmean(task)
-    midpoint = float((relax_mean + task_mean) / 2.0)
-    cal["midpoint"] = midpoint
-    device_state.calibration_midpoint = midpoint
-    return {
-        "status": "ok",
-        "midpoint": midpoint,
-        "relax_mean": float(relax_mean),
-        "task_mean": float(task_mean),
-        "counts": {"relax": len(relax), "task": len(task)},
-    }
-
-@app.get("/calibration/status")
-async def calibration_status():
-    cal = device_state.calibration
-    elapsed = 0.0
-    if cal.get("phase"):
-        try:
-            elapsed = time.time() - float(cal.get("start_time") or 0.0)
-        except Exception:
-            elapsed = 0.0
-    return {
-        "phase": cal.get("phase"),
-        "elapsed": round(elapsed, 2),
-        "counts": {"relax": len(cal.get("relax", []) or []), "task": len(cal.get("task", []) or [])},
-        "midpoint": cal.get("midpoint"),
-    }

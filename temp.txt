@@ -202,8 +202,6 @@ class Engine:
         self.focus_bar_hist: List[float] = []
         self.eval_queue: List[Dict[str, int]] = []
         self._focus_avg = 50.0
-        # Profile name for reference
-        self.profile_name: str = "none"
 
     # grid helpers
     def _sp16(self): return int(self.sr * 60.0 / max(1, self.tempo_bpm) / 4.0)
@@ -343,93 +341,6 @@ class Engine:
 
         return out.astype(np.float32)
 
-    # ===== Profile adaptation helpers =====
-    def set_texture_index(self, idx: int):
-        idx = int(max(0, min(len(TEXTURE_MODES) - 1, idx)))
-        self.tex_idx = idx
-        _, v, d, b = TEXTURE_MODES[self.tex_idx]
-        self.padA.set_mode_params(v, d, b)
-        self.padB.set_mode_params(v, d, b)
-
-    def set_pad_brightness(self, bright: float):
-        b = float(np.clip(bright, 0.0, 0.4))
-        self.padA.bright = b
-        self.padB.bright = b
-
-    def set_tempo(self, bpm: float):
-        self.tempo_bpm = float(np.clip(bpm, 20.0, 120.0))
-        self.sp16 = self._sp16()
-
-    def set_drone_params(self, cutoff_hz: float = 600.0, gain: float = 0.06):
-        # Recreate with new cutoff; keep gentle overtone voice
-        self.drone = DroneOvertone(self.sr, cutoff=float(max(100.0, cutoff_hz)))
-        self.drone.gain = float(np.clip(gain, 0.0, 0.2))
-
-    def apply_profile(self, name: str):
-        """Apply coarse presets based on learning profile.
-        Supported: 'adhd', 'sensory' (asd), 'dyslexia', 'none'
-        """
-        n = (name or "none").strip().lower()
-        self.profile_name = n
-        # Reset to neutral baseline
-        self.hold_bars = 32
-        self.bandit.epsilon = RL_EPSILON
-        self.set_tempo(48)
-        self.set_drone_params(cutoff_hz=600.0, gain=0.06)
-        self.set_texture_index(self.tex_idx)
-        self.set_pad_brightness(TEXTURE_MODES[self.tex_idx][3])
-
-        if n in ("none", "default"):
-            return
-        if n == "adhd":
-            # Slightly more engagement, still smooth
-            self.hold_bars = 24
-            self.bandit.epsilon = 0.12
-            self.set_tempo(52)
-            self.set_texture_index(1)  # 'stringy'
-            self.set_pad_brightness(0.16)
-        elif n in ("sensory", "asd", "autism", "sensory_sensitivity"):
-            # Fewer highs, slower/longer transitions, lower dynamics
-            self.hold_bars = 48
-            self.bandit.epsilon = 0.04
-            self.set_tempo(44)
-            self.set_texture_index(0)  # 'warm_pad'
-            self.set_pad_brightness(0.08)
-            self.set_drone_params(cutoff_hz=400.0, gain=0.045)
-        elif n == "dyslexia":
-            # Prefer stability
-            self.hold_bars = 40
-            self.bandit.epsilon = 0.05
-            self.set_tempo(48)
-            self.set_texture_index(0)
-            self.set_pad_brightness(0.10)
-
-    def apply_overrides(self, params: dict):
-        # Allow fine-tuning from client
-        if not isinstance(params, dict):
-            return
-        if "hold_bars" in params:
-            self.hold_bars = int(max(8, min(128, int(params["hold_bars"]))))
-        if "epsilon" in params:
-            try:
-                self.bandit.epsilon = float(np.clip(float(params["epsilon"]), 0.0, 0.5))
-            except Exception:
-                pass
-        if "tempo" in params:
-            try:
-                self.set_tempo(float(params["tempo"]))
-            except Exception:
-                pass
-        if "brightness" in params:
-            try:
-                self.set_pad_brightness(float(params["brightness"]))
-            except Exception:
-                pass
-        if "drone_cut" in params or "drone_gain" in params:
-            cut = float(params.get("drone_cut", 600.0))
-            gain = float(params.get("drone_gain", 0.06))
-            self.set_drone_params(cutoff_hz=cut, gain=gain)
-
 # ===== Session (short queue, self-healing) =====
 @dataclass
 class MusicSession:
@@ -452,14 +363,6 @@ class MusicSession:
 
     def skip(self):
         self._engine._begin_texture_change(longer=True)
-        self._ensure_thread()
-
-    def apply_profile(self, profile: str):
-        self._engine.apply_profile(profile)
-        self._ensure_thread()
-
-    def apply_overrides(self, params: dict):
-        self._engine.apply_overrides(params)
         self._ensure_thread()
 
     def next_chunk(self) -> bytes:
@@ -509,3 +412,4 @@ class MusicSession:
                 self._gen_thread.join(timeout=1.0)
         finally:
             self._gen_thread = None
+

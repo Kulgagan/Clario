@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import Visualizer from "@/components/Visualizer";
 import { Slider } from "@/components/ui/slider";
 import { Pause, Play, SkipForward, Volume2 } from "lucide-react";
@@ -14,6 +17,11 @@ const Session = () => {
   const [alphaBetaRatio, setAlphaBetaRatio] = useState<number>(0);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [showQuiz, setShowQuiz] = useState<boolean>(false);
+  const [quizDone, setQuizDone] = useState<boolean>(false);
+  const [pendingPlay, setPendingPlay] = useState<boolean>(false);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [profileInfo, setProfileInfo] = useState<{ profile: string; overrides: Record<string, number> } | null>(null);
 
   // Audio + WS refs
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -31,6 +39,11 @@ const Session = () => {
   const [lastChunkBytes, setLastChunkBytes] = useState(0);
   const [lastChunkAmp, setLastChunkAmp] = useState(0);
   const [lastError, setLastError] = useState<string>("");
+  // Calibration state
+  const [showCal, setShowCal] = useState(false);
+  const [calPhase, setCalPhase] = useState<'idle'|'relax'|'task'|'done'>('idle');
+  const [calSeconds, setCalSeconds] = useState<number>(60);
+  const [calInterval, setCalInterval] = useState<number | null>(null);
 
   // Keep dashboard metrics fresh
   useEffect(() => {
@@ -56,6 +69,152 @@ const Session = () => {
       }
     };
   }, []);
+
+  // Questionnaire: load from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("musicProfileAnswers");
+      const savedInfo = localStorage.getItem("musicProfileInfo");
+      if (saved) {
+        const a = JSON.parse(saved);
+        setAnswers(a || {});
+        setQuizDone(true);
+      }
+      if (savedInfo) {
+        const info = JSON.parse(savedInfo);
+        if (info && info.profile) setProfileInfo(info);
+      }
+    } catch {}
+  }, []);
+
+  type Question = { id: string; question: string; options: string[] };
+  const questions: Question[] = [
+    {
+      id: "q1",
+      question: "Do you have a diagnosed learning disability?",
+      options: [
+        "No, I do not have a learning disability",
+        "Yes, I have ADHD (Attention Deficit Hyperactivity Disorder)",
+        "Yes, I have Autism Spectrum Disorder (ASD)",
+        "Yes, I have both ADHD and Autism",
+        "Yes, I have a different learning disability",
+        "I am not sure / Prefer not to answer",
+      ],
+    },
+    {
+      id: "q2",
+      question:
+        "If you have a learning disability, which specific type? (Select 'Not applicable' if you don't have one)",
+      options: [
+        "Not applicable",
+        "Dyslexia",
+        "Dyscalculia",
+        "Dysgraphia",
+        "Auditory Processing Disorder",
+        "Visual Processing Disorder",
+        "Non-Verbal Learning Disability",
+        "Other learning disability",
+      ],
+    },
+    {
+      id: "q3",
+      question: "How often do you experience difficulty maintaining focus or attention on tasks?",
+      options: [
+        "Rarely or never",
+        "Occasionally (a few times a week)",
+        "Frequently (daily or most days)",
+        "Constantly (throughout most of the day)",
+      ],
+    },
+    {
+      id: "q4",
+      question: "How often do you experience restlessness or difficulty sitting still?",
+      options: ["Rarely or never", "Occasionally", "Frequently", "Constantly"],
+    },
+    {
+      id: "q5",
+      question: "How often do you have difficulty organizing tasks or managing time?",
+      options: ["Rarely or never", "Occasionally", "Frequently", "Constantly"],
+    },
+    {
+      id: "q6",
+      question: "How sensitive are you to sensory stimuli (sounds, lights, textures, smells)?",
+      options: [
+        "Not sensitive at all",
+        "Slightly sensitive",
+        "Moderately sensitive",
+        "Very sensitive (often overwhelming)",
+      ],
+    },
+    {
+      id: "q7",
+      question: "How often do you experience difficulty with social interactions or understanding social cues?",
+      options: ["Rarely or never", "Occasionally", "Frequently", "Constantly"],
+    },
+    {
+      id: "q8",
+      question: "How important are routines and predictability in your daily life?",
+      options: [
+        "Not important - I'm flexible with changes",
+        "Somewhat important",
+        "Very important - I prefer routines",
+        "Extremely important - changes are very difficult",
+      ],
+    },
+  ];
+
+  const deriveProfile = (a: Record<string, string>): { profile: string; overrides: Record<string, number> } => {
+    const o: Record<string, number> = {};
+    let profile: string = "none";
+
+    const has = (id: string, s: string) => (a[id] || "").toLowerCase().includes(s.toLowerCase());
+
+    // Map q1 primary
+    if (has("q1", "both") || has("q1", "autism")) profile = "sensory"; // ASD => sensory-friendly
+    else if (has("q1", "adhd")) profile = "adhd";
+
+    // Sensory sensitivity (q6)
+    const q6 = (a["q6"] || "").toLowerCase();
+    if (q6.includes("very") || q6.includes("moderately")) {
+      profile = profile === "adhd" ? profile : "sensory"; // tilt toward sensory if not adhd-dominant
+      o.brightness = 0.08; // darker timbre
+      o.drone_cut = 400; // fewer highs
+      o.drone_gain = 0.045; // lower dynamics
+    } else if (q6.includes("slightly")) {
+      o.brightness = 0.10;
+    }
+
+    // Need for routine (q8)
+    const q8 = (a["q8"] || "").toLowerCase();
+    if (q8.includes("very") || q8.includes("extremely")) {
+      o.hold_bars = Math.max(o.hold_bars || 0, 40);
+      o.epsilon = Math.min(o.epsilon ?? 1, 0.06);
+      o.tempo = Math.min(o.tempo || 48, 48); // keep slow
+      if (profile === "none") profile = "sensory"; // prefer stability
+    }
+
+    // Restlessness / attention lapses (q3, q4, q5)
+    const restlessCount = ["q3", "q4", "q5"].reduce((acc, k) => {
+      const v = (a[k] || "").toLowerCase();
+      return acc + (v.includes("frequently") || v.includes("constantly") ? 1 : 0);
+    }, 0);
+    if (restlessCount >= 2) {
+      profile = "adhd";
+      o.tempo = Math.max(o.tempo || 0, 52); // subtle pulse via slightly higher tempo
+      o.hold_bars = Math.min(o.hold_bars || 24, 32);
+      o.epsilon = Math.max(o.epsilon || 0.12, 0.10);
+      o.brightness = Math.max(o.brightness || 0.16, 0.16);
+    }
+
+    // Specific LD types (q2) => prefer stability
+    const q2 = (a["q2"] || "").toLowerCase();
+    if (q2 && !q2.includes("not applicable")) {
+      o.hold_bars = Math.max(o.hold_bars || 0, 36);
+      o.epsilon = Math.min(o.epsilon ?? 1, 0.08);
+    }
+
+    return { profile, overrides: o };
+  };
 
   // Start/stop adaptive music
   useEffect(() => {
@@ -105,6 +264,18 @@ const Session = () => {
         try {
           ws.send(JSON.stringify({ type: "focus", value: focusLevel }));
           ws.send(JSON.stringify({ type: "volume", value: (volume?.[0] ?? 70) / 100 }));
+          // Send profile preferences if available
+          const info = profileInfo || (() => {
+            try {
+              const savedInfo = localStorage.getItem("musicProfileInfo");
+              return savedInfo ? JSON.parse(savedInfo) : null;
+            } catch { return null; }
+          })();
+          if (info && info.profile) {
+            ws.send(
+              JSON.stringify({ type: "profile", profile: info.profile, overrides: info.overrides || {} })
+            );
+          }
         } catch {}
       };
 
@@ -197,6 +368,89 @@ const Session = () => {
     } catch {}
   };
 
+  // ===== Calibration flow (Session) =====
+  const startCountdown = (seconds: number, onDone: () => void) => {
+    setCalSeconds(seconds);
+    const id = window.setInterval(() => {
+      setCalSeconds((s) => {
+        if (s <= 1) {
+          window.clearInterval(id);
+          setCalInterval(null);
+          onDone();
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000) as unknown as number;
+    setCalInterval(id);
+  };
+
+  const startRelax = async () => {
+    try {
+      await api.startCalibration('relax');
+      setCalPhase('relax');
+      startCountdown(60, stopRelax);
+    } catch {
+      toast.error('Failed to start relax calibration');
+    }
+  };
+
+  const stopRelax = async () => {
+    try { await api.stopCalibration('relax'); } catch {}
+    setCalPhase('task');
+    setCalSeconds(60);
+  };
+
+  const startTask = async () => {
+    try {
+      await api.startCalibration('task');
+      setCalPhase('task');
+      startCountdown(60, stopTask);
+    } catch {
+      toast.error('Failed to start task calibration');
+    }
+  };
+
+  const stopTask = async () => {
+    try { await api.stopCalibration('task'); } catch {}
+    try {
+      const res = await api.commitCalibration();
+      localStorage.setItem('calibrationMidpoint', String(res.midpoint));
+      toast.success('Calibration complete');
+      setCalPhase('done');
+      setShowCal(false);
+    } catch {
+      toast.error('Failed to finalize calibration');
+    }
+  };
+
+  const handleAnswer = (id: string, value: string) => {
+    setAnswers((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const submitQuiz = () => {
+    const info = deriveProfile(answers);
+    setProfileInfo(info);
+    setQuizDone(true);
+    setShowQuiz(false);
+    try {
+      localStorage.setItem("musicProfileAnswers", JSON.stringify(answers));
+      localStorage.setItem("musicProfileInfo", JSON.stringify(info));
+    } catch {}
+    try {
+      if (musicWsRef.current && musicWsRef.current.readyState === WebSocket.OPEN) {
+        musicWsRef.current.send(
+          JSON.stringify({ type: "profile", profile: info.profile, overrides: info.overrides || {} })
+        );
+      }
+    } catch {}
+    if (pendingPlay) {
+      setPendingPlay(false);
+      setPlaying(true);
+    }
+    toast.success("Preferences saved. Tailoring music to you.");
+  };
+
   // Local test: push a 1s 440Hz tone into the worklet (bypasses the WS)
   const testTone = async () => {
     try {
@@ -270,8 +524,32 @@ const Session = () => {
                 <Slider value={volume} max={100} step={1} onValueChange={handleVolumeChange} aria-label="Volume" />
               </div>
             </div>
+
+            <Button
+              variant="outline"
+              onClick={() => {
+                try { if (calInterval) { window.clearInterval(calInterval); setCalInterval(null); } } catch {}
+                setCalPhase('idle');
+                setCalSeconds(60);
+                setShowCal(true);
+                toast.info('Recalibration will re-learn your neutral focus point.');
+              }}
+            >
+              Recalibrate
+            </Button>
           </div>
         </header>
+        {/* Pre-screening Quiz trigger */}
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {quizDone
+              ? "Preferences loaded. You can retake the quiz anytime."
+              : "Please complete a short pre-session questionnaire to tailor the music."}
+          </p>
+          <Button variant="outline" onClick={() => setShowQuiz(true)}>
+            {quizDone ? "Retake Questionnaire" : "Start Questionnaire"}
+          </Button>
+        </div>
         {/* Focus visual + stats */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="rounded-2xl border bg-card p-6">
@@ -312,10 +590,113 @@ const Session = () => {
           <div className="mt-3">
             <Button variant="outline" onClick={testTone}>Play 1s Test Tone</Button>
           </div>
-        </div>
+        </div>        {/* Questionnaire Dialog */}
+        <Dialog open={showQuiz} onOpenChange={setShowQuiz}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Personalize Your Audio</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6 max-h-[60vh] overflow-auto pr-2">
+              {questions.map((q) => (
+                <div key={q.id}>
+                  <div className="mb-2 font-medium">{q.question}</div>
+                  <RadioGroup
+                    value={answers[q.id] || ""}
+                    onValueChange={(v) => handleAnswer(q.id, v)}
+                    className="space-y-2"
+                  >
+                    {q.options.map((opt, i) => {
+                      const id = `${q.id}-${i}`;
+                      return (
+                        <div key={id} className="flex items-center space-x-2">
+                          <RadioGroupItem id={id} value={opt} />
+                          <Label htmlFor={id} className="cursor-pointer">{opt}</Label>
+                        </div>
+                      );
+                    })}
+                  </RadioGroup>
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button onClick={submitQuiz}>Save Preferences</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
+      {/* Calibration Dialog */}
+      <Dialog open={showCal} onOpenChange={setShowCal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Recalibrate Neutral Focus</DialogTitle>
+          </DialogHeader>
+          {calPhase === 'idle' && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">We’ll measure your baseline in two 1-minute steps:</p>
+              <ol className="list-decimal pl-6 text-sm text-muted-foreground space-y-1">
+                <li>Relaxation: close your eyes and breathe slowly.</li>
+                <li>Mental math: solve simple problems to engage focus.</li>
+              </ol>
+              <div className="flex justify-end">
+                <Button onClick={startRelax}>Start Relaxation</Button>
+              </div>
+            </div>
+          )}
+          {calPhase === 'relax' && (
+            <div className="space-y-4">
+              <p className="text-sm">Relax, breathe slowly. Recording baseline...</p>
+              <div className="text-2xl font-semibold">{calSeconds}s</div>
+            </div>
+          )}
+          {calPhase === 'task' && (
+            <div className="space-y-4">
+              <p className="text-sm">Mental math: solve in your head. Recording focus...</p>
+              <SessionMathTask seconds={calSeconds} onStart={startTask} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+const SessionMathTask = ({ seconds, onStart }: { seconds: number; onStart: () => void }) => {
+  const [started, setStarted] = useState(false);
+  const [a, setA] = useState<number>(0);
+  const [b, setB] = useState<number>(0);
+  const [op, setOp] = useState<'+'|'-'>('+');
+  const [ans, setAns] = useState('');
+
+  useEffect(() => {
+    if (!started) return;
+    if (seconds === 60) newProblem();
+  }, [started]);
+
+  const newProblem = () => {
+    const na = Math.floor(10 + Math.random()*90);
+    const nb = Math.floor(10 + Math.random()*90);
+    const ops: ('+'|'-')[] = ['+','-'];
+    setOp(ops[Math.floor(Math.random()*ops.length)]);
+    setA(na); setB(nb); setAns('');
+  };
+
+  const submit = () => { newProblem(); };
+
+  if (!started) {
+    return <Button onClick={() => { setStarted(true); onStart(); }}>Start Task</Button>;
+  }
+  return (
+    <div className="space-y-3">
+      <div className="text-2xl font-semibold">{seconds}s</div>
+      <div className="text-xl">{a} {op} {b} = ?</div>
+      <div className="flex gap-2">
+        <input className="border rounded px-3 py-2 w-32 bg-background" value={ans} onChange={(e) => setAns(e.target.value)} onKeyDown={(e) => { if (e.key==='Enter') submit(); }} />
+        <Button onClick={submit}>Next</Button>
+      </div>
     </div>
   );
 };
 
 export default Session;
+
+
