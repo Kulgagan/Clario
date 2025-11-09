@@ -1,6 +1,5 @@
 # app/backend/rl_music.py
-# Ultra-slow ambient engine (numpy-only) with rare, crossfaded texture changes.
-# Mono Float32 @ 48kHz, 0.25s chunks. No clicky notes; no drums; no hiss.
+# Ultra-slow ambient engine (numpy-only) with rare, crossfaded texture changes, based on reinforcement learning from BCI input to optimize flow state.
 
 import time, threading, queue, logging, math
 from dataclasses import dataclass, field
