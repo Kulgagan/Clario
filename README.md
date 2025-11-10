@@ -1,5 +1,6 @@
 <img src="banner.png" alt="Clario Logo" width="160" />
-# Clario: Be calm. Stay focused. Perform your best.
+
+## Clario: Be calm. Stay focused. Perform your best.
 
 ![MUSYNC Stack](docs/stack-diagram-banner.svg)
 
