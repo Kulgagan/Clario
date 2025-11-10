@@ -6,6 +6,14 @@ import { Label } from "@/components/ui/label";
 import Visualizer from "@/components/Visualizer";
 import { Slider } from "@/components/ui/slider";
 import { Pause, Play, SkipForward, Volume2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -574,23 +582,51 @@ const Session = () => {
             </ul>
           </div>
         </section>
-        {/* Debug HUD */}
-        <div className="mt-8 mb-6 rounded-xl border bg-card p-4 text-sm">
-          <div className="font-medium mb-2">Audio Debug</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <div>Audio ready: <span className="font-mono">{String(audioReady)}</span></div>
-            <div>Worklet loaded: <span className="font-mono">{String(workletLoaded)}</span></div>
-            <div>WS state: <span className="font-mono">{wsState}</span></div>
-            <div>Last chunk: <span className="font-mono">{lastChunkBytes} bytes</span></div>
-            <div>Max amp: <span className="font-mono">{lastChunkAmp.toFixed(5)}</span></div>
-            <div className="col-span-2 md:col-span-4">
-              {lastError && <span className="text-red-500">Error: {lastError}</span>}
-            </div>
-          </div>
-          <div className="mt-3">
-            <Button variant="outline" onClick={testTone}>Play 1s Test Tone</Button>
-          </div>
-        </div>        {/* Questionnaire Dialog */}
+        {/* Debug HUD (Dropdown) */}
+        <div className="mt-8 mb-6 text-sm">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">Audio Debug</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-72">
+              <DropdownMenuLabel>Audio Debug</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled>
+                Audio ready
+                <span className="ml-auto font-mono">{String(audioReady)}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                Worklet loaded
+                <span className="ml-auto font-mono">{String(workletLoaded)}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                WS state
+                <span className="ml-auto font-mono">{wsState}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                Last chunk
+                <span className="ml-auto font-mono">{lastChunkBytes} bytes</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                Max amp
+                <span className="ml-auto font-mono">{lastChunkAmp.toFixed(5)}</span>
+              </DropdownMenuItem>
+              {lastError ? (
+                <DropdownMenuItem disabled className="text-red-500">
+                  Error
+                  <span className="ml-auto font-mono truncate max-w-[9rem]" title={lastError}>
+                    {lastError}
+                  </span>
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); testTone(); }}>
+                Play 1s Test Tone
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        {/* Questionnaire Dialog */}
         <Dialog open={showQuiz} onOpenChange={setShowQuiz}>
           <DialogContent>
             <DialogHeader>
