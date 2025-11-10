@@ -135,6 +135,6 @@ docs/
 - Mohammad Naqvi
 - Vladislav Marchenko
 
-## License
+## References
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC10221503/">https://pmc.ncbi.nlm.nih.gov/articles/PMC10221503/</a>
