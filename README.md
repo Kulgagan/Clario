@@ -68,22 +68,6 @@ npm run dev
 
 Visit http://localhost:5173 to access the web app in development mode.
 
-## Production Build
-
-To run everything on a single port:
-
-```bash
-# Build the frontend
-cd app/frontend
-npm run build
-
-# Start the backend (it will serve the built frontend)
-cd ../backend
-uvicorn backend:app --host 127.0.0.1 --port 8000
-```
-
-Visit http://127.0.0.1:8000 to access the production build.
-
 ## Usage
 
 1. Connect your Muse 2 headband via Bluetooth
