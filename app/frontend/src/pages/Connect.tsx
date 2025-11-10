@@ -14,7 +14,7 @@ const Connect = () => {
   const [showQuiz, setShowQuiz] = useState(false);
   const [showCal, setShowCal] = useState(false);
   const [calPhase, setCalPhase] = useState<'idle'|'relax'|'task'|'done'>('idle');
-  const [calSeconds, setCalSeconds] = useState<number>(60);
+  const [calSeconds, setCalSeconds] = useState<number>(30);
   const [calInterval, setCalInterval] = useState<number | null>(null);
   const [quizDone, setQuizDone] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -227,7 +227,7 @@ const Connect = () => {
     try {
       await api.startCalibration('relax');
       setCalPhase('relax');
-      startCountdown(60, stopRelax);
+      startCountdown(30, stopRelax);
     } catch {
       toast.error('Failed to start relax calibration');
     }
@@ -236,14 +236,14 @@ const Connect = () => {
   const stopRelax = async () => {
     try { await api.stopCalibration('relax'); } catch {}
     setCalPhase('task');
-    setCalSeconds(60);
+    setCalSeconds(30);
   };
 
   const startTask = async () => {
     try {
       await api.startCalibration('task');
       setCalPhase('task');
-      startCountdown(60, stopTask);
+      startCountdown(30, stopTask);
     } catch {
       toast.error('Failed to start task calibration');
     }
@@ -295,7 +295,7 @@ const Connect = () => {
           Connect Your Muse 2
         </h1>
 
-        <p className="text-lg text-muted-foreground mb-10 leading-relaxed">
+              <p className="text-lg text-muted-foreground mb-10 leading-relaxed">
           {isConnected
             ? "Device connected! Ready to start your focus session."
             : connecting 
@@ -328,7 +328,7 @@ const Connect = () => {
               onClick={() => {
                 try { if (calInterval) { window.clearInterval(calInterval); setCalInterval(null); } } catch {}
                 setCalPhase('idle');
-                setCalSeconds(60);
+                setCalSeconds(30);
                 setShowCal(true);
                 toast.info('Recalibration will re-learn your neutral focus point.');
               }}
@@ -368,7 +368,7 @@ const Connect = () => {
           {calPhase === 'idle' && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                We’ll measure your baseline in two 1-minute steps:
+                We’ll measure your baseline in two 30-second steps:
               </p>
               <ol className="list-decimal pl-6 text-sm text-muted-foreground space-y-1">
                 <li>Relaxation: close your eyes and breathe slowly.</li>
@@ -441,7 +441,7 @@ const MathTask = ({ seconds, onStart }: { seconds: number; onStart: () => void }
 
   useEffect(() => {
     if (!started) return;
-    if (seconds === 60) newProblem();
+    if (seconds === 30) newProblem();
   }, [started]);
 
   const newProblem = () => {

@@ -1,0 +1,44 @@
+flowchart LR
+
+  %% Layout groups
+  subgraph Client[Client / Frontend]
+    A1[Muse 2\nEEG via BLE] --> A2[Connect Page\nPermissions]
+    A2 --> A3[Session UI\nReact + shadcn/ui]
+    A3 --> A4[Focus Meter\nCharts/Visualizer]
+    A9[AudioWorklet\nPCM Player] --> A10[Speakers]
+  end
+
+  subgraph Server[Server / Audio + Policy]
+    B1[EEG Stream Ingest] --> B2[Preprocess\nFilter + Gate Artifacts]
+    B2 --> B3[Features\nBandpower + Alpha/Beta]
+    B3 --> B4[Focus Estimator\nSmoothing]
+    B6[RL/Policy Engine\nKeep + Explore + Transition]
+    B7[Audio Generator\nMotif + Params]
+    B8[PCM Streamer\nWebSocket]
+  end
+
+  %% Personalization lane
+  C1[Questionnaire] --> C2[Profile + Overrides]
+  C2 --> B6
+
+  %% Runtime flow (Inference)
+  A1 -->|calibration and runtime| B1
+  A3 -->|focus 0..100 every 750ms| B6
+  B4 -->|focus %| A4
+  B6 --> B7 --> B8 --> A9
+
+  %% Control/UX
+  A3 -.skip/volume/pause.-> B8
+
+  %% Training/offline elements (black)
+  %% (Removed: offline datasets; not used in this app)
+
+  %% Calibration loop (dashed)
+  A3 -. start relax/task .-> B4
+  B4 -. update midpoint .-> A4
+
+  %% Legend
+  subgraph Legend
+    L1[Green arrows = Inference]
+    L2[Dashed arrows = Calibration Controls]
+  end

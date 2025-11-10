@@ -50,7 +50,7 @@ const Session = () => {
   // Calibration state
   const [showCal, setShowCal] = useState(false);
   const [calPhase, setCalPhase] = useState<'idle'|'relax'|'task'|'done'>('idle');
-  const [calSeconds, setCalSeconds] = useState<number>(60);
+  const [calSeconds, setCalSeconds] = useState<number>(30);
   const [calInterval, setCalInterval] = useState<number | null>(null);
 
   // Keep dashboard metrics fresh
@@ -397,7 +397,7 @@ const Session = () => {
     try {
       await api.startCalibration('relax');
       setCalPhase('relax');
-      startCountdown(60, stopRelax);
+      startCountdown(30, stopRelax);
     } catch {
       toast.error('Failed to start relax calibration');
     }
@@ -406,14 +406,14 @@ const Session = () => {
   const stopRelax = async () => {
     try { await api.stopCalibration('relax'); } catch {}
     setCalPhase('task');
-    setCalSeconds(60);
+    setCalSeconds(30);
   };
 
   const startTask = async () => {
     try {
       await api.startCalibration('task');
       setCalPhase('task');
-      startCountdown(60, stopTask);
+      startCountdown(30, stopTask);
     } catch {
       toast.error('Failed to start task calibration');
     }
@@ -538,7 +538,7 @@ const Session = () => {
               onClick={() => {
                 try { if (calInterval) { window.clearInterval(calInterval); setCalInterval(null); } } catch {}
                 setCalPhase('idle');
-                setCalSeconds(60);
+                setCalSeconds(30);
                 setShowCal(true);
                 toast.info('Recalibration will re-learn your neutral focus point.');
               }}
@@ -668,7 +668,7 @@ const Session = () => {
           </DialogHeader>
           {calPhase === 'idle' && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">We’ll measure your baseline in two 1-minute steps:</p>
+              <p className="text-sm text-muted-foreground">We’ll measure your baseline in two 30-second steps:</p>
               <ol className="list-decimal pl-6 text-sm text-muted-foreground space-y-1">
                 <li>Relaxation: close your eyes and breathe slowly.</li>
                 <li>Mental math: solve simple problems to engage focus.</li>
@@ -705,7 +705,7 @@ const SessionMathTask = ({ seconds, onStart }: { seconds: number; onStart: () =>
 
   useEffect(() => {
     if (!started) return;
-    if (seconds === 60) newProblem();
+    if (seconds === 30) newProblem();
   }, [started]);
 
   const newProblem = () => {

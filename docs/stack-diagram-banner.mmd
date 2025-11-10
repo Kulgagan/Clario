@@ -1,0 +1,27 @@
+%%{init: { 'flowchart': { 'diagramPadding': 8, 'htmlLabels': false, 'rankSpacing': 40, 'nodeSpacing': 30, 'curve': 'linear' } }}%%
+flowchart LR
+
+  subgraph Client[Client]
+    A1[EEG BLE] --> A2[Connect]
+    A2 --> A3[Session UI]
+    A3 --> A4[Focus Meter]
+    A9[PCM Player] --> A10[Speakers]
+  end
+
+  subgraph Server[Server]
+    B1[EEG Ingest] --> B2[Preprocess]
+    B2 --> B3[Features]
+    B3 --> B4[Focus %]
+    B6[Policy] --> B7[Generator]
+    B7 --> B8[WS PCM]
+  end
+
+  C1[Questionnaire] --> C2[Profile]
+  C2 --> B6
+
+  A1 -->|calibration and runtime| B1
+  A3 -->|focus 0..100 every 750ms| B6
+  B4 -->|focus %| A4
+  B6 --> B7 --> B8 --> A9
+  A3 -.skip/volume/pause.-> B8
+
