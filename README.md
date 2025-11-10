@@ -21,6 +21,10 @@ Sessions run locally for privacy; only a single focus value and basic controls a
 
 ![MUSYNC Model](docs/musync-model.png)
 
+## Screenshot
+
+<img src="docs/focus-session.png" alt="Clario Focus Session" width="720" />
+
 ## Features
 
 - Real-time EEG data processing from Muse 2 headband
